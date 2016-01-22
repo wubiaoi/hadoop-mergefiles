@@ -34,8 +34,6 @@ public class MergeTask implements Task {
     //初始化参数
     Config.init(args);
     conf = new Configuration();
-    conf.addResource(new Path("/workspace/softwares/hadoop-2.7.1/etc/hadoop/core-site.xml"));
-    conf.addResource(new Path("/workspace/softwares/hadoop-2.7.1/etc/hadoop/hdfs-site.xml"));
     this.fs = FileSystem.get(conf);
     Path path = Config.getPath();
     //创建临时目录
