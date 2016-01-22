@@ -194,7 +194,7 @@ public class TaskRunner extends Thread {
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize() + 50 * 1024 * 1024);
       } else if (inputType.equals(FileType.LZO)) {
-        job.setInputFormatClass(LzoTextInputFormat.class);
+        job.setInputFormatClass(CombineMergeTextInputFormat.class);
         FileOutputFormat.setCompressOutput(job, true);
         FileOutputFormat.setOutputCompressorClass(job, LzopCodec.class);
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
@@ -268,7 +268,7 @@ public class TaskRunner extends Thread {
         data = fs.listStatus(output, new PathFilter() {
           @Override
           public boolean accept(Path path) {
-            return !path.toString().startsWith(".") && !path.toString().startsWith("_");
+            return !path.getName().startsWith(".") && !path.getName().startsWith("_");
           }
         });
         out = fs.create(mergeLog);
