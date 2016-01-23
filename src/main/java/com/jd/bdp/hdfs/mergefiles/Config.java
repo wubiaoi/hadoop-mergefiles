@@ -39,6 +39,11 @@ public class Config {
   private static boolean isRecursive = true;
 
   /**
+   * 读取本地文件获取合并目录
+   */
+  private static String sourefile;
+
+  /**
    * 每个合并任务的临时目录
    */
   private static Path tmpDir;
@@ -56,6 +61,14 @@ public class Config {
 
   public static void setWantNoneTypeToText(boolean wantNoneTypeToText) {
     Config.wantNoneTypeToText = wantNoneTypeToText;
+  }
+
+  public static String getSourefile() {
+    return sourefile;
+  }
+
+  public static void setSourefile(String sourefile) {
+    Config.sourefile = sourefile;
   }
 
   public static int getMaxJob() {
@@ -128,7 +141,8 @@ public class Config {
     options.addOption("m", "reducesize", true, "设置合并每个reducer处理的大小，默认:250M");
     options.addOption("n", "isRecursive", false, "是否递归合并，默认:递归合并");
     options.addOption("t", "wantNoneTypeToText", false, "确定文件为text,默认:No");
-    options.addOption("o", "isRecursive", true, "合并结果目录，默认:输入目录");
+    options.addOption("o", "output", true, "合并结果目录，默认:输入目录");
+    options.addOption("f", "file", true, "以文件形式传入路径");
     CommandLineParser parser = new PosixParser();
     CommandLine cmd = null;
 
@@ -147,8 +161,10 @@ public class Config {
     if (cmd.hasOption('p')) {
       path = new Path(cmd.getOptionValue('p'));
       Config.setPath(path);
+    } else if (cmd.hasOption('f')) {
+      Config.setSourefile(cmd.getOptionValue('f'));
     } else {
-      System.out.println("必须输入合并的HDFS全路径!");
+      System.out.println("必须输入合并的HDFS全路径或者指定个本地文件");
       System.out.println(help());
       System.exit(1);
     }
@@ -220,6 +236,7 @@ public class Config {
             "\t-n\t是否递归合并，默认:递归合并\n" +
             "\t-t\t是否把不识别的文件认为是文本类型，默认:否\n" +
             "\t-o\t设置合并后输入的路径，默认:输入目录\n" +
+            "\t-f\t指定一个本地文件作为输入合并目录\n" +
             "\t";
   }
 
@@ -233,6 +250,8 @@ public class Config {
     msg.append("\t临时目录: " + tmpDir + "\n");
     msg.append("\t合并后文件的目录: " + (mergeTargePath == null ? path : mergeTargePath) + "\n");
     msg.append("\t最大并发JOB数: " + maxJob + "\n");
+    msg.append("\t不认别文件类型处理: " + (wantNoneTypeToText ? "认为是Text" : "不处理") + "\n");
+    msg.append("\t文件读取输入路径文件路径: " + sourefile + "\n");
     return msg.toString();
   }
 }

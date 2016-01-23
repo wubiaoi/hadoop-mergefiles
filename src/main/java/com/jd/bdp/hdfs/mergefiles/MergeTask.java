@@ -10,7 +10,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
 
-import java.io.IOException;
+import java.io.*;
 
 /**
  * 合并HDFS上的小文件
@@ -54,7 +54,22 @@ public class MergeTask implements Task {
     console.printInfo("Create Temp dir [" + mergeListFile + "] success");
     MergeContext context = new MergeContext();
     //发现需要合并的路径
-    if (fs.isDirectory(path)) {
+    if (path == null) {
+      File file = new File(Config.getSourefile());
+      InputStreamReader in = new InputStreamReader(new FileInputStream(file));
+      BufferedReader br = new BufferedReader(in);
+      String line;
+      while ((line = br.readLine()) != null) {
+        path = new Path(line);
+        if (fs.isDirectory(path)) {
+          conf.set(Config.INPUT_DIR, path.toString());
+          recurseDir(path, context, fs, out);
+        } else {
+          console.printError("请输入一个合法的路径");
+          System.exit(1);
+        }
+      }
+    } else if (fs.isDirectory(path)) {
       conf.set(Config.INPUT_DIR, path.toString());
       recurseDir(path, context, fs, out);
     } else {

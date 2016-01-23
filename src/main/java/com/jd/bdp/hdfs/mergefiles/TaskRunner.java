@@ -204,7 +204,7 @@ public class TaskRunner extends Thread {
       } else if (inputType.equals(FileType.AVRO)) {
         job.setInputFormatClass(AvroKeyInputFormat.class);
         job.setOutputFormatClass(AvroKeyValueOutputFormat.class);//todo
-        return 1;
+        throw new Exception("Not support AVRO file merge now.");
       } else if (inputType.equals(FileType.UNKNOWN)) {
         throw new Exception("UnKnow file type.If you make sure it is a text format.add -t run this path[" + input + "] again.");
       }
