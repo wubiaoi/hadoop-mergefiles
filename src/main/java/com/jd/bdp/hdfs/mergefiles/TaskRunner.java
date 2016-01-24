@@ -2,21 +2,26 @@ package com.jd.bdp.hdfs.mergefiles;
 
 import com.hadoop.compression.lzo.DistributedLzoIndexer;
 import com.hadoop.compression.lzo.LzopCodec;
-import com.hadoop.mapreduce.LzoTextInputFormat;
+import com.jd.bdp.hdfs.mergefiles.exception.UnsupportedTypeException;
+import com.jd.bdp.hdfs.mergefiles.mr.MergeFilesMapper;
 import com.jd.bdp.hdfs.mergefiles.mr.MergePath;
 import com.jd.bdp.hdfs.mergefiles.mr.lib.CombineMergeTextInputFormat;
-import com.jd.bdp.hdfs.mergefiles.mr.lib.Filter;
-import com.jd.bdp.hdfs.mergefiles.mr.MergeFilesMapper;
+import com.jd.bdp.hdfs.mergefiles.mr.lib.CompressedCombineFileInputFormat;
 import com.jd.bdp.utils.LogHelper;
 import org.apache.avro.mapreduce.AvroKeyInputFormat;
 import org.apache.avro.mapreduce.AvroKeyValueOutputFormat;
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.*;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.MD5Hash;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.Counters;
 import org.apache.hadoop.mapred.JobPriority;
+import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.JobStatus;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
@@ -24,6 +29,7 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.ToolRunner;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -48,6 +54,9 @@ public class TaskRunner extends Thread {
   protected boolean isRunning;
   private JobStatus.State jobstatus;
   private MergeContext context;
+  private Configuration conf;
+  private FileSystem fs;
+  private FSDataOutputStream out;
   private static AtomicLong taskCounter = new AtomicLong(0);
   private static ThreadLocal<Long> taskRunnerID = new ThreadLocal<Long>() {
     @Override
@@ -58,15 +67,18 @@ public class TaskRunner extends Thread {
 
   protected Thread runner;
 
-  public TaskRunner(MergePath mergePath, MergeContext context) {
+  public TaskRunner(MergePath mergePath, MergeContext context) throws IOException {
     this.mergePath = mergePath;
     this.input = mergePath.getPath();
-    this.output = new Path(Config.getTmpDir(), MD5Hash.digest(input.toString()).toString());
+    this.output = new Path(mergePath.getTmpDir().getParent(), mergePath.getTmpDir().getName() + "_merge");
     this.inputType = mergePath.getType();
     this.outputType = mergePath.getType();
     this.context = context;
     this.console = new LogHelper(log, true);
     this.PREFIX = "[" + input + "]Merge Task===>";
+    this.conf = new Configuration();
+    this.fs = FileSystem.get(conf);
+    this.out = fs.create(new Path(mergePath.getLogDir(), "error.log"));
   }
 
   public String getPREFIX() {
@@ -175,16 +187,13 @@ public class TaskRunner extends Thread {
    */
 
   public int runMergeJob(Path input, Path output) {
-    Configuration conf = new Configuration();
     try {
       console.printInfo("Start Merge: " + input + " ,Type:" + inputType + ",Hash:[" +
               MD5Hash.digest(input.toString()).toString() + "]");
-      FileSystem fs = FileSystem.get(conf);
       conf.set("mapreduce.job.priority", JobPriority.VERY_HIGH.name());
       conf.set("mapred.job.priority", JobPriority.VERY_HIGH.name());
 
       Job job = Job.getInstance(conf, "MergeFiles:" + input);
-      FileInputFormat.setInputPathFilter(job, Filter.MergeFileFilter.class);
       job.setJarByClass(TaskRunner.class);
 
       //根据文件类型选择输入输出类型
@@ -194,19 +203,20 @@ public class TaskRunner extends Thread {
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize() + 50 * 1024 * 1024);
       } else if (inputType.equals(FileType.LZO)) {
-        job.setInputFormatClass(CombineMergeTextInputFormat.class);
+        job.setInputFormatClass(CompressedCombineFileInputFormat.class);
+        conf.set("io.compression.codecs", "com.hadoop.compression.lzo.LzopCodec");
         FileOutputFormat.setCompressOutput(job, true);
         FileOutputFormat.setOutputCompressorClass(job, LzopCodec.class);
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize() + 50 * 1024 * 1024);
       } else if (inputType.equals(FileType.ORC)) {
-        throw new Exception("Not support ORC file merge now."); //todo
+        throw new UnsupportedTypeException(); //todo
       } else if (inputType.equals(FileType.AVRO)) {
         job.setInputFormatClass(AvroKeyInputFormat.class);
         job.setOutputFormatClass(AvroKeyValueOutputFormat.class);//todo
-        throw new Exception("Not support AVRO file merge now.");
+        throw new UnsupportedTypeException();
       } else if (inputType.equals(FileType.UNKNOWN)) {
-        throw new Exception("UnKnow file type.If you make sure it is a text format.add -t run this path[" + input + "] again.");
+        throw new UnsupportedTypeException("UnKnow file type.If you make sure it is a text format.add -t run this path[" + input + "] again.");
       }
 
       job.setMapOutputKeyClass(Text.class);
@@ -239,52 +249,42 @@ public class TaskRunner extends Thread {
         } else {
           targetPath = input;
         }
-        //备份原数据到tmpDir/outpath/old目录
-        Path oldData = new Path(output, ".old");
-        fs.mkdirs(oldData);
-        FileStatus[] data = fs.listStatus(input, new Filter.MergeFileFilter());
-        Path moveLog = new Path(oldData, ".backup.log");
-        Path mergeLog = new Path(oldData, ".merge.log");
-        console.printInfo(this.PREFIX + "Start move file:" + input + " to " + oldData);
+        Counter mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
+        Counter mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
+        if (mapInput != null) {
+          mergePath.setMapInput(mapInput.getValue());
+        }
+        if (mapOutput != null) {
+          mergePath.setMapOutput(mapOutput.getValue());
+        }
+        //备份原数据到tmpDir目录
+        Path moveLog = new Path(mergePath.getLogDir(), "mv.log");
+        console.printInfo(this.PREFIX + "Start move file:" + targetPath + " to " + mergePath.getTmpDir());
         FSDataOutputStream out = fs.create(moveLog);
-        for (FileStatus f : data) {
-          if (f.isDirectory()) continue;
-          fs.rename(f.getPath(), oldData);
-          //只获取小文件的index文件
-          if (inputType.equals(FileType.LZO)) {
-            Path lzoIndex = new Path(f.getPath().getParent(), new Path(f.getPath().getName() + ".index"));
-            try {
-              fs.rename(lzoIndex, oldData);
-              out.writeBytes(lzoIndex + "\n");
-            } catch (Exception e) {
-            }
-          }
-          out.writeBytes(f.getPath() + "\n");
-        }
-        data = null;
-        out.close();
-        console.printInfo(this.PREFIX + "move file:" + input + " to " + oldData + " success");
+        out.writeBytes("move " + targetPath + " to " + mergePath.getTmpDir() + "\n");
+        fs.rename(targetPath, mergePath.getTmpDir());
+        console.printInfo(this.PREFIX + "move file:" + targetPath + " to " + mergePath.getTmpDir() + " success");
         console.printInfo(this.PREFIX + "Start move file:" + output + " to " + targetPath);
-        data = fs.listStatus(output, new PathFilter() {
-          @Override
-          public boolean accept(Path path) {
-            return !path.getName().startsWith(".") && !path.getName().startsWith("_");
-          }
-        });
-        out = fs.create(mergeLog);
-        for (FileStatus f : data) {
-          if (f.isDirectory()) continue;
-          Path newPath = new Path(targetPath, "merge_" + f.getPath().getName());
-          fs.rename(f.getPath(), newPath);
-          out.writeBytes(f.getPath() + "\n");
-        }
-        console.printInfo(this.PREFIX + "move file " + output + " to " + targetPath);
+        fs.rename(output, targetPath);
+        console.printInfo(this.PREFIX + "move file " + output + " to " + targetPath + " success");
         out.close();
       }
       return res;
     } catch (Exception e) {
       exception = e;
       return 200;
+    }
+  }
+
+  public void errorRecorder(String msg) throws IOException {
+    out.writeBytes(msg + "\n");
+  }
+
+  public void shutdown() {
+    try {
+      out.close();
+    } catch (IOException e) {
+      console.printError(ExceptionUtils.getFullStackTrace(e));
     }
   }
 

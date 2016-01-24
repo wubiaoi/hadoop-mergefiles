@@ -8,4 +8,6 @@ public interface Task {
   void init(String[] args) throws Exception;
 
   int run() throws Exception;
+
+  void close() throws Exception;
 }

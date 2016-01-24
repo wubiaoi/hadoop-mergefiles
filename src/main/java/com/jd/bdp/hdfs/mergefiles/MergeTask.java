@@ -1,5 +1,6 @@
 package com.jd.bdp.hdfs.mergefiles;
 
+import com.jd.bdp.hdfs.mergefiles.exception.FileTypeNotUniqueException;
 import com.jd.bdp.hdfs.mergefiles.mr.MergePath;
 import com.jd.bdp.hdfs.mergefiles.mr.lib.Filter;
 import com.jd.bdp.utils.LogHelper;
@@ -24,6 +25,7 @@ public class MergeTask implements Task {
   private FileSystem fs;
   private Configuration conf;
   private Path tmpDir;
+  private Path logDir;
 
   public MergeTask() {
     console = new LogHelper(log, true);
@@ -35,12 +37,6 @@ public class MergeTask implements Task {
     Config.init(args);
     conf = new Configuration();
     this.fs = FileSystem.get(conf);
-    Path path = Config.getPath();
-    //创建临时目录
-    tmpDir = new Path(new Path(fs.getHomeDirectory().toString(), "tmp").toString() +
-            "/.merge/." + Utils.makeMergeId(fs.resolvePath(path).toString()));
-    Config.setTmpDir(tmpDir);
-    fs.mkdirs(tmpDir);
     console.printInfo(Config.list());
   }
 
@@ -49,9 +45,6 @@ public class MergeTask implements Task {
     Path path = Config.getPath();
     int errorNumber = 0;
     //打开流将待合并的目录保存到文件
-    Path mergeListFile = new Path(Config.getTmpDir(), Config.MERGE_PATH_LIST_FILE);
-    FSDataOutputStream out = fs.create(mergeListFile);
-    console.printInfo("Create Temp dir [" + mergeListFile + "] success");
     MergeContext context = new MergeContext();
     //发现需要合并的路径
     if (path == null) {
@@ -63,7 +56,7 @@ public class MergeTask implements Task {
         path = new Path(line);
         if (fs.isDirectory(path)) {
           conf.set(Config.INPUT_DIR, path.toString());
-          recurseDir(path, context, fs, out);
+          recurseDir(path, context, fs);
         } else {
           console.printError("请输入一个合法的路径");
           System.exit(1);
@@ -71,21 +64,24 @@ public class MergeTask implements Task {
       }
     } else if (fs.isDirectory(path)) {
       conf.set(Config.INPUT_DIR, path.toString());
-      recurseDir(path, context, fs, out);
+      recurseDir(path, context, fs);
     } else {
       console.printError("请输入一个合法的路径");
       System.exit(1);
     }
-    out.close();
-    Path errorFile = new Path(tmpDir, "error.log");
-    FSDataOutputStream errOut = fs.create(errorFile);
     //合并小文件
     MergePath task;
     StringBuilder report = new StringBuilder();
     console.printInfo("总计合并路径个数为: " + context.getTotal());
     while (context.isRunning()) {
       while ((task = context.getRunnable(Config.getMaxJob())) != null) {
-        TaskRunner taskRunner = new TaskRunner(task, context);
+        TaskRunner taskRunner = null;
+        try {
+          taskRunner = new TaskRunner(task, context);
+        } catch (IOException e) {
+          console.printError(task.getPath() + "==>init TaskRunner failed." + ExceptionUtils.getFullStackTrace(e));
+          continue;
+        }
         taskRunner.start();
       }
       TaskRunner mergeRunner = context.pollFinished();
@@ -95,7 +91,7 @@ public class MergeTask implements Task {
       if (mergeRunner.getException() != null) {
         console.printError(mergeRunner.getPREFIX() + " ERROR! " + ExceptionUtils.getFullStackTrace(mergeRunner.getException()));
         errorNumber++;
-        errOut.writeBytes(mergeRunner.getInput() + "\t"
+        mergeRunner.errorRecorder(mergeRunner.getInput() + "\t"
                 + mergeRunner.getInputType() + "\t" + mergeRunner.getOutput() + "\t" + mergeRunner.getJobstatus() + "\t" + Config.getMergeTargePath() + "\n");
       } else {
         ContentSummary mergeAfter = fs.getContentSummary(mergeRunner.getTargetPath());
@@ -105,13 +101,15 @@ public class MergeTask implements Task {
                 mergeRunner.getMergePath().getSize(), mergeRunner.getMergePath().getNumFiles()) + "\n");
         report.append(String.format("\t\t合并后:Size=%s,FileCount=%s",
                 mergeAfter.getLength(), mergeAfter.getFileCount()) + "\n");
+        report.append("\t\tInput Records:" + mergeRunner.getMergePath().getMapInput());
+        report.append("\t\tOutput Records:" + mergeRunner.getMergePath().getMapOutput());
       }
+      mergeRunner.shutdown();
     }
     console.printInfo(report.toString());
     if (errorNumber != 0) {
-      console.printError("发现有" + errorNumber + "路径合并失败,请查看日志:" + errorFile);
+      console.printError("发现有" + errorNumber + "路径合并失败");
     }
-    errOut.close();
     return 0;
   }
 
@@ -123,30 +121,56 @@ public class MergeTask implements Task {
    * @param fs
    * @throws InterruptedException
    */
-  public static void recurseDir(Path path, MergeContext context, FileSystem fs, FSDataOutputStream out) throws InterruptedException, IOException {
-    FileStatus[] files = fs.listStatus(path, new Filter.MergeFileFilter());
-    //当前路径下存在小文件,将路径加入到待合并清单
-    if (files.length > 1) {
-      FileType type = Utils.getFileType(files[0].getPath(), fs);
-      ContentSummary cs = fs.getContentSummary(path);
-      MergePath mergePath = new MergePath(path, type, cs.getLength(), cs.getFileCount());
-      context.addToRunnable(mergePath);
-      StringBuilder res = new StringBuilder();
-      res.append(path.toString() + Config.FIELD_SEPARATOR);
-      res.append(FileType.TEXT + Config.FIELD_SEPARATOR);
-      res.append(cs.getLength() + Config.FIELD_SEPARATOR);
-      res.append(cs.getFileCount());
-      res.append("\n");
-      out.writeBytes(res.toString());
-    }
-    //如果递归合并,则递归子目录,将存在小文件的目录加入到待合并清单
-    if (Config.isIsRecursive()) {
-      FileStatus[] dirs = fs.listStatus(path, new Filter.MergeDirFilter());
-      //如果存在符合条件的子目录
-      for (FileStatus dir : dirs) {
-        recurseDir(dir.getPath(), context, fs, out);
+  public void recurseDir(Path path, MergeContext context, FileSystem fs)
+          throws InterruptedException, IOException {
+    FileStatus[] dirs = fs.listStatus(path, new Filter.MergeDirFilter());
+    if (dirs.length > 0) { //当目录下存在子目录
+      if (Config.isRecursive()) {
+        for (FileStatus dir : dirs) {
+          recurseDir(dir.getPath(), context, fs);
+        }
       }
+    } else { //存在需要合并的文件
+      ContentSummary contentSummary = fs.getContentSummary(path);
+      long size = contentSummary.getLength();
+      long fileCount = contentSummary.getFileCount();
+      if (fileCount > 3 && size / fileCount < Config.getMergeLessThanSize()) {
+        //创建临时目录
+        String tmpDirName = Utils.cutPrefix(
+                Path.getPathWithoutSchemeAndAuthority(path).toString()
+                        .replaceAll("/", "_"), "_");
+        Path curDir = new Path(Utils.ts(), tmpDirName);
+        tmpDir = new Path(Config.getTmpDir(), curDir);
+        logDir = new Path(Config.getTmpDir(),
+                new Path(new Path("logs", Utils.ts()), tmpDirName));
+        fs.mkdirs(logDir);
+
+        FileStatus[] files = fs.listStatus(path, new Filter.MergeFileFilter());
+        FileType type;
+        try {
+          type = Filter.checkTypeUnique(files, fs);
+        } catch (FileTypeNotUniqueException e) {
+          FSDataOutputStream errout = fs.create(new Path(logDir, "error.log"));
+          errout.writeBytes("TypeNotUnique\t" + path);
+          errout.close();
+          return;
+        }
+        MergePath mergePath = new MergePath(path, type, size, fileCount);
+        mergePath.setTmpDir(tmpDir);
+        mergePath.setLogDir(logDir);
+        context.addToRunnable(mergePath);
+        StringBuilder res = new StringBuilder();
+        res.append(path.toString() + Config.FIELD_SEPARATOR);
+        res.append(FileType.TEXT + Config.FIELD_SEPARATOR);
+        res.append(size + Config.FIELD_SEPARATOR);
+        res.append(fileCount);
+        res.append("\n");
+      }
+
     }
   }
 
+  @Override
+  public void close() throws IOException {
+  }
 }

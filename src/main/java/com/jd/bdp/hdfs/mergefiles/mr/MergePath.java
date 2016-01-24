@@ -13,6 +13,10 @@ public class MergePath {
   private FileType type;
   private long size;
   private long numFiles;
+  private Path tmpDir;
+  private Path logDir;
+  private long mapInput;
+  private long mapOutput;
 
   public MergePath() {
   }
@@ -22,6 +26,38 @@ public class MergePath {
     this.type = type;
     this.size = size;
     this.numFiles = numFiles;
+  }
+
+  public long getMapOutput() {
+    return mapOutput;
+  }
+
+  public void setMapOutput(long mapOutput) {
+    this.mapOutput = mapOutput;
+  }
+
+  public long getMapInput() {
+    return mapInput;
+  }
+
+  public void setMapInput(long mapInput) {
+    this.mapInput = mapInput;
+  }
+
+  public Path getTmpDir() {
+    return tmpDir;
+  }
+
+  public void setTmpDir(Path tmpDir) {
+    this.tmpDir = tmpDir;
+  }
+
+  public Path getLogDir() {
+    return logDir;
+  }
+
+  public void setLogDir(Path logDir) {
+    this.logDir = logDir;
   }
 
   public Path getPath() {

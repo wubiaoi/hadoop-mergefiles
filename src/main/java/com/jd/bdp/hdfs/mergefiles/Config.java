@@ -49,6 +49,11 @@ public class Config {
   private static Path tmpDir;
 
   /**
+   * 日志文件位置
+   */
+  private static Path logDir;
+
+  /**
    * 合并后文件的目录
    */
   private static Path mergeTargePath;
@@ -61,6 +66,14 @@ public class Config {
 
   public static void setWantNoneTypeToText(boolean wantNoneTypeToText) {
     Config.wantNoneTypeToText = wantNoneTypeToText;
+  }
+
+  public static Path getLogDir() {
+    return logDir;
+  }
+
+  public static void setLogDir(Path logDir) {
+    Config.logDir = logDir;
   }
 
   public static String getSourefile() {
@@ -111,7 +124,7 @@ public class Config {
     Config.mergeMaxSize = mergeMaxSize;
   }
 
-  public static boolean isIsRecursive() {
+  public static boolean isRecursive() {
     return isRecursive;
   }
 
@@ -143,6 +156,7 @@ public class Config {
     options.addOption("t", "wantNoneTypeToText", false, "确定文件为text,默认:No");
     options.addOption("o", "output", true, "合并结果目录，默认:输入目录");
     options.addOption("f", "file", true, "以文件形式传入路径");
+    options.addOption("j", "maxJobNum", true, "最大并发的job数");
     CommandLineParser parser = new PosixParser();
     CommandLine cmd = null;
 
@@ -183,6 +197,10 @@ public class Config {
     if (cmd.hasOption('o')) {
       Config.setMergeTargePath(new Path(cmd.getOptionValue('o')));
     }
+    if (cmd.hasOption('j')) {
+      Config.setMaxJob(Integer.parseInt(cmd.getOptionValue('j')));
+    }
+    tmpDir = new Path("/tmp");
   }
 
   /**
@@ -193,7 +211,7 @@ public class Config {
   public static void init(Configuration conf) {
     setPath(new Path(conf.get(LocalConf.MERGE_PATH.name())));
     setMergeLessThanSize(conf.getLong(LocalConf.MERGE_FILE_LESS_THAN_SIZE.name(), getMergeLessThanSize()));
-    setIsRecursive(conf.getBoolean(LocalConf.MERGE_IS_RECURSIVE.name(), isIsRecursive()));
+    setIsRecursive(conf.getBoolean(LocalConf.MERGE_IS_RECURSIVE.name(), isRecursive()));
     setMergeMaxSize(conf.getLong(LocalConf.MERGE_FILE_MAX_SIZE.name(), getMergeMaxSize()));
     setTmpDir(new Path(conf.get(LocalConf.MERGE_TMP_DIR.name())));
     setMergeTargePath(new Path(conf.get(LocalConf.MERGE_TARGET_PATH.name())));
@@ -215,7 +233,7 @@ public class Config {
   public static void copyConf(Configuration conf) {
     conf.set(LocalConf.MERGE_PATH.name(), getPath().toString());
     conf.setLong(LocalConf.MERGE_FILE_LESS_THAN_SIZE.name(), getMergeLessThanSize());
-    conf.setBoolean(LocalConf.MERGE_IS_RECURSIVE.name(), isIsRecursive());
+    conf.setBoolean(LocalConf.MERGE_IS_RECURSIVE.name(), isRecursive());
     conf.setLong(LocalConf.MERGE_FILE_MAX_SIZE.name(), getMergeMaxSize());
     conf.set(LocalConf.MERGE_TMP_DIR.name(), getTmpDir().toString());
     conf.set(LocalConf.MERGE_TARGET_PATH.name(), getMergeTargePath().toString());
@@ -237,6 +255,7 @@ public class Config {
             "\t-t\t是否把不识别的文件认为是文本类型，默认:否\n" +
             "\t-o\t设置合并后输入的路径，默认:输入目录\n" +
             "\t-f\t指定一个本地文件作为输入合并目录\n" +
+            "\t-j\t指定最大并行的job数\n" +
             "\t";
   }
 

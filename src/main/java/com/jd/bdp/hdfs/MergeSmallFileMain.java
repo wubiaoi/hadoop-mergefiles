@@ -18,5 +18,6 @@ public class MergeSmallFileMain {
     Task mergeTask = new MergeTask();
     mergeTask.init(args);
     mergeTask.run();
+    mergeTask.close();
   }
 }

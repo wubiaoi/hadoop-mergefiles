@@ -1,13 +1,18 @@
 package com.jd.bdp.hdfs.mergefiles.mr.lib;
 
 import com.jd.bdp.hdfs.mergefiles.Config;
+import com.jd.bdp.hdfs.mergefiles.FileType;
+import com.jd.bdp.hdfs.mergefiles.exception.FileTypeNotUniqueException;
+import com.jd.bdp.utils.Utils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 
 /**
@@ -34,7 +39,6 @@ public class Filter {
         boolean isTrash = path.toString().contains(".Trash");
         boolean isDataExport = path.toString().contains("/data_export.db/");
         boolean isTmp = path.getName().startsWith(".") || path.getName().startsWith("_");
-        boolean isSmallFile = fs.getFileStatus(path).getLen() < Config.getMergeLessThanSize(); // 获取小文件M
         String base = conf.get(Config.INPUT_DIR);
         boolean isbase = false;
         boolean isDir = fs.isDirectory(path);
@@ -42,7 +46,7 @@ public class Filter {
           isbase = path.equals(fs.resolvePath(new Path(base)));
         }
         return !(isTrash || isDataExport || isTmp) && !(isDir && !isbase)
-                && !path.getName().endsWith(".lzo.index") && isSmallFile;
+                && !path.getName().endsWith(".lzo.index") ;
       } catch (IOException e) {
       }
       return false;
@@ -71,5 +75,27 @@ public class Filter {
       }
       return false;
     }
+  }
+
+  /**
+   * 判断目录下的文件类型是否一致
+   *
+   * @param files
+   * @param fs
+   * @return
+   * @throws IOException
+   */
+  public static FileType checkTypeUnique(FileStatus[] files, FileSystem fs)
+          throws IOException, FileTypeNotUniqueException {
+    if (files.length < 2) {
+      return Utils.getFileType(files[0].getPath(), fs);
+    }
+    FileType type = Utils.getFileType(files[0].getPath(), fs);
+    for (int i = 1; i < files.length; i++) {
+      if (!Utils.getFileType(files[i].getPath(), fs).equals(type)) {
+        throw new FileTypeNotUniqueException();
+      }
+    }
+    return type;
   }
 }
