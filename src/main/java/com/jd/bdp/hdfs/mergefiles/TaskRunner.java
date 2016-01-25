@@ -67,6 +67,7 @@ public class TaskRunner extends Thread {
   protected Thread runner;
 
   public TaskRunner(MergePath mergePath, MergeContext context) throws IOException {
+    setRunning(true);
     this.mergePath = mergePath;
     this.input = mergePath.getPath();
     this.output = new Path(mergePath.getTmpDir().getParent(), mergePath.getTmpDir().getName() + "_merge");
@@ -78,6 +79,11 @@ public class TaskRunner extends Thread {
     this.conf = new Configuration();
     this.fs = FileSystem.get(conf);
     this.out = fs.create(new Path(mergePath.getLogDir(), "error.log"));
+    if (Config.getMergeTargePath() != null) {
+      targetPath = Config.getMergeTargePath();
+    } else {
+      targetPath = input;
+    }
   }
 
   public String getPREFIX() {
@@ -171,8 +177,6 @@ public class TaskRunner extends Thread {
   @Override
   public void run() {
     runner = Thread.currentThread();
-    context.launching(this);
-    setRunning(true);
     try {
       runMergeJob(input, output);
     } finally {
@@ -187,8 +191,7 @@ public class TaskRunner extends Thread {
 
   public int runMergeJob(Path input, Path output) {
     try {
-      console.printInfo("Start Merge: " + input + " ,Type:" + inputType + ",Hash:[" +
-              MD5Hash.digest(input.toString()).toString() + "]");
+      console.printInfo("Start Merge: " + input + " ,Type:" + inputType );
       conf.set("mapreduce.job.priority", JobPriority.VERY_HIGH.name());
       conf.set("mapred.job.priority", JobPriority.VERY_HIGH.name());
 
@@ -243,11 +246,6 @@ public class TaskRunner extends Thread {
           }
         }
         // 开始moveTask
-        if (Config.getMergeTargePath() != null) {
-          targetPath = Config.getMergeTargePath();
-        } else {
-          targetPath = input;
-        }
         Counter mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
         Counter mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
         if (mapInput != null) {

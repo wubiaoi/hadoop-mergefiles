@@ -82,6 +82,7 @@ public class MergeTask implements Task {
         TaskRunner taskRunner = null;
         try {
           taskRunner = new TaskRunner(task, context);
+          context.launching(taskRunner);
         } catch (IOException e) {
           console.printError(task.getPath() + "==>init TaskRunner failed." + ExceptionUtils.getFullStackTrace(e));
           continue;
@@ -110,6 +111,7 @@ public class MergeTask implements Task {
       }
       mergeRunner.shutdown();
     }
+    //输出合并信息
     console.printInfo(report.toString());
     if (errorNumber != 0) {
       console.printError("发现有" + errorNumber + "路径合并失败");

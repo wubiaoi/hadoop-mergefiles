@@ -94,6 +94,10 @@ public class Config {
   }
 
   public static void setMaxJob(int maxJob) {
+    if (maxJob < 1) {
+      System.out.println("job数必须大于１");
+      System.exit(1);
+    }
     Config.maxJob = maxJob;
   }
 
