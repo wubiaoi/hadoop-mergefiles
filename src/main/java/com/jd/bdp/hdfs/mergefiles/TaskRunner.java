@@ -19,7 +19,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.MD5Hash;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapred.Counters;
 import org.apache.hadoop.mapred.JobPriority;
 import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Job;
@@ -266,6 +265,7 @@ public class TaskRunner extends Thread {
         console.printInfo(this.PREFIX + "move file:" + targetPath + " to " + mergePath.getTmpDir() + " success");
         console.printInfo(this.PREFIX + "Start move file:" + output + " to " + targetPath);
         fs.rename(output, targetPath);
+        out.writeBytes("move " + output + " to " + targetPath + "\n");
         console.printInfo(this.PREFIX + "move file " + output + " to " + targetPath + " success");
         out.close();
       }

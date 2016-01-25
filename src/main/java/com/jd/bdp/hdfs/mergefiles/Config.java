@@ -1,8 +1,13 @@
 package com.jd.bdp.hdfs.mergefiles;
 
 import org.apache.commons.cli.*;
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Created by wubiao on 1/18/16.
@@ -24,7 +29,7 @@ public class Config {
   /**
    * 指定准备合并的HDFS全路径，必选
    */
-  private static Path path = null;
+  private static Path[] path = null;
   /**
    * 设置小于size大小的文件将被合并，默认:128M
    */
@@ -46,7 +51,7 @@ public class Config {
   /**
    * 每个合并任务的临时目录
    */
-  private static Path tmpDir;
+  private static Path tmpDir=new Path("/tmp");
 
   /**
    * 日志文件位置
@@ -100,11 +105,11 @@ public class Config {
     Config.mergeTargePath = mergeTargePath;
   }
 
-  public static Path getPath() {
+  public static Path[] getPath() {
     return path;
   }
 
-  public static void setPath(Path path) {
+  public static void setPath(Path[] path) {
     Config.path = path;
   }
 
@@ -149,7 +154,7 @@ public class Config {
     //参数处理
     Options options = new Options();
     options.addOption("h", "help", false, "查看使用说明");
-    options.addOption("p", "path", true, "hdfs路径");
+    options.addOption("p", "path", true, "hdfs路径,多个路径以逗号分隔");
     options.addOption("s", "mergeLessThanSize", true, "设置小于size大小的文件将被合并，默认:128M");
     options.addOption("m", "reducesize", true, "设置合并每个reducer处理的大小，默认:250M");
     options.addOption("n", "isRecursive", false, "是否递归合并，默认:递归合并");
@@ -157,10 +162,9 @@ public class Config {
     options.addOption("o", "output", true, "合并结果目录，默认:输入目录");
     options.addOption("f", "file", true, "以文件形式传入路径");
     options.addOption("j", "maxJobNum", true, "最大并发的job数");
+    options.addOption("d", "tempDir", true, "临时目录");
     CommandLineParser parser = new PosixParser();
     CommandLine cmd = null;
-
-    Path path = null; //准备合并的路径
 
     try {
       cmd = parser.parse(options, args);
@@ -173,8 +177,14 @@ public class Config {
       System.exit(0);
     }
     if (cmd.hasOption('p')) {
-      path = new Path(cmd.getOptionValue('p'));
-      Config.setPath(path);
+      String paths = cmd.getOptionValue('p');
+      String[] ps = StringUtils.split(paths, ',');
+      if (ps != null) {
+        path = new Path[ps.length];
+        for (int i = 0; i < path.length; i++) {
+          path[i] = new Path(ps[i]);
+        }
+      }
     } else if (cmd.hasOption('f')) {
       Config.setSourefile(cmd.getOptionValue('f'));
     } else {
@@ -200,21 +210,9 @@ public class Config {
     if (cmd.hasOption('j')) {
       Config.setMaxJob(Integer.parseInt(cmd.getOptionValue('j')));
     }
-    tmpDir = new Path("/tmp");
-  }
-
-  /**
-   * 保存本地配置信息到 HadoopConf
-   *
-   * @param conf
-   */
-  public static void init(Configuration conf) {
-    setPath(new Path(conf.get(LocalConf.MERGE_PATH.name())));
-    setMergeLessThanSize(conf.getLong(LocalConf.MERGE_FILE_LESS_THAN_SIZE.name(), getMergeLessThanSize()));
-    setIsRecursive(conf.getBoolean(LocalConf.MERGE_IS_RECURSIVE.name(), isRecursive()));
-    setMergeMaxSize(conf.getLong(LocalConf.MERGE_FILE_MAX_SIZE.name(), getMergeMaxSize()));
-    setTmpDir(new Path(conf.get(LocalConf.MERGE_TMP_DIR.name())));
-    setMergeTargePath(new Path(conf.get(LocalConf.MERGE_TARGET_PATH.name())));
+    if (cmd.hasOption('d')) {
+      Config.setTmpDir(new Path(cmd.getOptionValue('d')));
+    }
   }
 
   /**
@@ -248,7 +246,7 @@ public class Config {
     return "功能: 合并HDFS一个目录下的小文件，默认小于128M将被合并\n" +
             "Usage: hadoop jar MergeTask -p 准备合并的HDFS全路径\n" +
             "高级参数说明：\n" +
-            "\t-p\t指定准备合并的HDFS全路径，必选\n" +
+            "\t-p\t指定准备合并的HDFS全路径,多个以逗号分隔，必选\n" +
             "\t-s\t设置小于size大小的文件将被合并，默认:128M\n" +
             "\t-m\t设置合并每个reducer处理的大小，默认:250M\n" +
             "\t-n\t是否递归合并，默认:递归合并\n" +
@@ -262,12 +260,12 @@ public class Config {
   public static String list() {
     StringBuilder msg = new StringBuilder();
     msg.append("输入参数:\n");
-    msg.append("\t合并路径: " + path + "\n");
+    msg.append("\t合并路径: " + Arrays.deepToString(path) + "\n");
     msg.append("\t小文件合并小于: " + mergeLessThanSize / 1024 / 1024 + " Mb\n");
     msg.append("\t合并后文件的平均大小: " + mergeMaxSize / 1024 / 1024 + "Mb\n");
     msg.append("\t是否递归合并: " + ((isRecursive) ? "是\n" : "否\n"));
     msg.append("\t临时目录: " + tmpDir + "\n");
-    msg.append("\t合并后文件的目录: " + (mergeTargePath == null ? path : mergeTargePath) + "\n");
+    msg.append("\t合并后文件的目录: " + (mergeTargePath == null ? Arrays.deepToString(path) : mergeTargePath) + "\n");
     msg.append("\t最大并发JOB数: " + maxJob + "\n");
     msg.append("\t不认别文件类型处理: " + (wantNoneTypeToText ? "认为是Text" : "不处理") + "\n");
     msg.append("\t文件读取输入路径文件路径: " + sourefile + "\n");

@@ -42,7 +42,7 @@ public class MergeTask implements Task {
 
   @Override
   public int run() throws IOException, InterruptedException {
-    Path path = Config.getPath();
+    Path[] path = Config.getPath();
     int errorNumber = 0;
     //打开流将待合并的目录保存到文件
     MergeContext context = new MergeContext();
@@ -53,21 +53,25 @@ public class MergeTask implements Task {
       BufferedReader br = new BufferedReader(in);
       String line;
       while ((line = br.readLine()) != null) {
-        path = new Path(line);
-        if (fs.isDirectory(path)) {
-          conf.set(Config.INPUT_DIR, path.toString());
-          recurseDir(path, context, fs);
+        Path p = new Path(line);
+        if (fs.isDirectory(p)) {
+          conf.set(Config.INPUT_DIR, p.toString());
+          recurseDir(p, context, fs);
         } else {
           console.printError("请输入一个合法的路径");
           System.exit(1);
         }
       }
-    } else if (fs.isDirectory(path)) {
-      conf.set(Config.INPUT_DIR, path.toString());
-      recurseDir(path, context, fs);
     } else {
-      console.printError("请输入一个合法的路径");
-      System.exit(1);
+      for (Path p : path) {
+        if (fs.isDirectory(p)) {
+          conf.set(Config.INPUT_DIR, p.toString());
+          recurseDir(p, context, fs);
+        } else {
+          console.printError("不是一个合法的路径 " + p);
+          System.exit(1);
+        }
+      }
     }
     //合并小文件
     MergePath task;
