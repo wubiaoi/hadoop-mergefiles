@@ -191,7 +191,7 @@ public class TaskRunner extends Thread {
 
   public int runMergeJob(Path input, Path output) {
     try {
-      console.printInfo("Start Merge: " + input + " ,Type:" + inputType );
+      console.printInfo("Start Merge(" + getTaskRunnerID() + "/" + context.getTotal() + "): " + input + " ,Type:" + inputType);
       conf.set("mapreduce.job.priority", JobPriority.VERY_HIGH.name());
       conf.set("mapred.job.priority", JobPriority.VERY_HIGH.name());
 
