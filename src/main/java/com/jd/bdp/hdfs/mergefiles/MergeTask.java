@@ -38,6 +38,14 @@ public class MergeTask implements Task {
     conf = new Configuration();
     this.fs = FileSystem.get(conf);
     console.printInfo(Config.list());
+    //输出合并路径
+    StringBuilder res = new StringBuilder();
+    res.append("待合并路径" + Config.FIELD_SEPARATOR);
+    res.append("类型" + Config.FIELD_SEPARATOR);
+    res.append("大小" + Config.FIELD_SEPARATOR);
+    res.append("总文件数");
+    res.append("\n");
+    console.printInfo(res.toString());
   }
 
   @Override
@@ -137,10 +145,12 @@ public class MergeTask implements Task {
         }
       }
     } else { //存在需要合并的文件
+      FileStatus[] files = fs.listStatus(path, new Filter.MergeFileFilter());
       ContentSummary contentSummary = fs.getContentSummary(path);
       long size = contentSummary.getLength();
-      long fileCount = contentSummary.getFileCount();
-      if (fileCount > 3 && size / fileCount < Config.getMergeLessThanSize()) {
+      long totalCount = contentSummary.getFileCount();
+      long fileCount = files.length;
+      if (fileCount > 1 && size / fileCount < Config.getMergeLessThanSize()) {
         //创建临时目录
         String tmpDirName = Utils.cutPrefix(
                 Path.getPathWithoutSchemeAndAuthority(path).toString()
@@ -151,7 +161,6 @@ public class MergeTask implements Task {
                 new Path(new Path("logs", Utils.ts()), tmpDirName));
         fs.mkdirs(logDir);
 
-        FileStatus[] files = fs.listStatus(path, new Filter.MergeFileFilter());
         FileType type;
         try {
           type = Filter.checkTypeUnique(files, fs);
@@ -161,7 +170,7 @@ public class MergeTask implements Task {
           errout.close();
           return;
         }
-        MergePath mergePath = new MergePath(path, type, size, fileCount);
+        MergePath mergePath = new MergePath(path, type, size, totalCount);
         mergePath.setTmpDir(tmpDir);
         mergePath.setLogDir(logDir);
         context.addToRunnable(mergePath);
@@ -169,8 +178,9 @@ public class MergeTask implements Task {
         res.append(path.toString() + Config.FIELD_SEPARATOR);
         res.append(FileType.TEXT + Config.FIELD_SEPARATOR);
         res.append(size + Config.FIELD_SEPARATOR);
-        res.append(fileCount);
+        res.append(totalCount);
         res.append("\n");
+        console.printInfo(res.toString());
       }
 
     }
