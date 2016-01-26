@@ -254,6 +254,11 @@ public class TaskRunner extends Thread {
         if (mapOutput != null) {
           mergePath.setMapOutput(mapOutput.getValue());
         }
+        if (mergePath.getMapInput() != mergePath.getMapOutput()) {
+          console.printError(this.PREFIX + " mapInput Records not equals mapOutput Records.");
+          throw new Exception(this.PREFIX + " mapInput Records not equals mapOutput Records.MapInput Records:" +
+                  mergePath.getMapInput() + ",MapOutputRecords:" + mergePath.getMapOutput());
+        }
         //备份原数据到tmpDir目录
         Path moveLog = new Path(mergePath.getLogDir(), "mv.log");
         console.printInfo(this.PREFIX + "Start move file:" + targetPath + " to " + mergePath.getTmpDir());

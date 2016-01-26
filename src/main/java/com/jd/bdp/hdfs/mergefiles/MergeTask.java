@@ -37,6 +37,13 @@ public class MergeTask implements Task {
     Config.init(args);
     conf = new Configuration();
     this.fs = FileSystem.get(conf);
+    //创建临时目录
+    if (Config.getTmpDir() == null) {
+      String user = System.getProperty("user.name");
+      String tmp = "/user/" + user + "/warehouse/tmp/sqltmp";
+      Config.setTmpDir(new Path(tmp));
+      fs.mkdirs(Config.getTmpDir());
+    }
     console.printInfo(Config.list());
     //输出合并路径
     StringBuilder res = new StringBuilder();
@@ -155,10 +162,11 @@ public class MergeTask implements Task {
         String tmpDirName = Utils.cutPrefix(
                 Path.getPathWithoutSchemeAndAuthority(path).toString()
                         .replaceAll("/", "_"), "_");
-        Path curDir = new Path(Utils.ts(), tmpDirName);
+        tmpDirName = tmpDirName + "_" + Utils.ts();
+        Path curDir = new Path(Utils.dt(), tmpDirName);
         tmpDir = new Path(Config.getTmpDir(), curDir);
         logDir = new Path(Config.getTmpDir(),
-                new Path(new Path("logs", Utils.ts()), tmpDirName));
+                new Path(new Path("logs", Utils.dt()), tmpDirName));
         fs.mkdirs(logDir);
 
         FileType type;

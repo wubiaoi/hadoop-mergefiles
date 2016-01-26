@@ -51,7 +51,7 @@ public class Config {
   /**
    * 每个合并任务的临时目录
    */
-  private static Path tmpDir=new Path("/tmp");
+  private static Path tmpDir;
 
   /**
    * 日志文件位置
