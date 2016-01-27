@@ -21,9 +21,6 @@ public class UnsupportedTypeException extends Exception {
     super(cause);
   }
 
-  protected UnsupportedTypeException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
-    super(message, cause, enableSuppression, writableStackTrace);
-  }
 
   @Override
   public String getMessage() {

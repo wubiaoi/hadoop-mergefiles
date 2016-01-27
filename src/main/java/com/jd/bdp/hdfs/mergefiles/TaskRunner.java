@@ -232,7 +232,15 @@ public class TaskRunner extends Thread {
       FileInputFormat.setInputPaths(job, input);
       FileOutputFormat.setOutputPath(job, output);
       int res = job.waitForCompletion(true) ? 0 : 1;
+      // 开始moveTask
+      Counter mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
+      Counter mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
       setJobstatus(job.getJobState());
+      try {
+        fs.delete(new Path(input, ".stage"));
+      } catch (IOException e) {
+        log.warn("delete tmp .stage failed.");
+      }
       if (res == 0 && jobstatus.equals(JobStatus.State.SUCCEEDED)) {
         console.printInfo(this.PREFIX + "Merge Job finished successfully");
         //创建索引
@@ -245,9 +253,6 @@ public class TaskRunner extends Thread {
             throw new Exception(PREFIX + "build Lzo Index Failed,exitCode:" + exitCode);
           }
         }
-        // 开始moveTask
-        Counter mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
-        Counter mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
         if (mapInput != null) {
           mergePath.setMapInput(mapInput.getValue());
         }

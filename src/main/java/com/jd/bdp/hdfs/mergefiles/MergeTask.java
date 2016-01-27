@@ -184,7 +184,7 @@ public class MergeTask implements Task {
         context.addToRunnable(mergePath);
         StringBuilder res = new StringBuilder();
         res.append(path.toString() + Config.FIELD_SEPARATOR);
-        res.append(FileType.TEXT + Config.FIELD_SEPARATOR);
+        res.append(type + Config.FIELD_SEPARATOR);
         res.append(size + Config.FIELD_SEPARATOR);
         res.append(totalCount);
         res.append("\n");

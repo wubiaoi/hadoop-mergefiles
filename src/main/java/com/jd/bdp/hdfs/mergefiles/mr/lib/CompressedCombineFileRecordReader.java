@@ -141,6 +141,7 @@ public class CompressedCombineFileRecordReader
             CompressionCodecFactory.removeSuffix(path.toString(),
                     codec.getDefaultExtension());
     dPath = new Path(outputUri);
+    dPath = new Path(new Path(dPath.getParent(), ".stage"), dPath.getName());
 
     InputStream in = null;
     OutputStream out = null;
