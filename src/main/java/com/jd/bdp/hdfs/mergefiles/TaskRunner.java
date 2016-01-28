@@ -8,6 +8,7 @@ import com.jd.bdp.hdfs.mergefiles.mr.MergePath;
 import com.jd.bdp.hdfs.mergefiles.mr.lib.CombineMergeTextInputFormat;
 import com.jd.bdp.hdfs.mergefiles.mr.lib.CompressedCombineFileInputFormat;
 import com.jd.bdp.utils.LogHelper;
+import com.jd.bdp.utils.Utils;
 import org.apache.avro.mapreduce.AvroKeyInputFormat;
 import org.apache.avro.mapreduce.AvroKeyValueOutputFormat;
 import org.apache.commons.lang.exception.ExceptionUtils;
@@ -80,7 +81,8 @@ public class TaskRunner extends Thread {
     this.fs = FileSystem.get(conf);
     this.out = fs.create(new Path(mergePath.getLogDir(), "error.log"));
     if (Config.getMergeTargePath() != null) {
-      targetPath = Config.getMergeTargePath();
+      targetPath = new Path(Utils.cutSuffix(Config.getMergeTargePath().toString(), "/") + Path.getPathWithoutSchemeAndAuthority(input));
+      fs.mkdirs(targetPath);
     } else {
       targetPath = input;
     }
@@ -178,7 +180,7 @@ public class TaskRunner extends Thread {
   public void run() {
     runner = Thread.currentThread();
     try {
-      runMergeJob(input, output);
+      result = runMergeJob(input, output);
     } finally {
       runner = null;
       setRunning(false);

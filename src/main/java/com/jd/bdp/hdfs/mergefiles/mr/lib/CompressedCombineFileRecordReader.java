@@ -63,7 +63,7 @@ public class CompressedCombineFileRecordReader
 
     fileIn = fs.open(dPath);
 
-    if (isCompressed) fs.deleteOnExit(dPath);
+    //if (isCompressed) fs.deleteOnExit(dPath);
 
     if (startOffset != 0) {
       skipFirstLine = true;
@@ -152,9 +152,9 @@ public class CompressedCombineFileRecordReader
       out = fs.create(dPath);
       IOUtils.copyBytes(in, out, conf);
     } finally {
+      rlength = fs.getFileStatus(dPath).getLen();
       IOUtils.closeStream(in);
       IOUtils.closeStream(out);
-      rlength = fs.getFileStatus(dPath).getLen();
     }
   }
 

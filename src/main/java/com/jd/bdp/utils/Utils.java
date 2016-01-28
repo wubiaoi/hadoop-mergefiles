@@ -54,6 +54,14 @@ public class Utils {
     return string;
   }
 
+  public static String cutSuffix(String string, String suffix) {
+    if(string.endsWith(suffix)) {
+      string = string.substring(0, string.length() - suffix.length());
+    }
+
+    return string;
+  }
+
   public static FileType getFileType(Path path, FileSystem fs) throws IOException {
     if (path.getName().endsWith(".lzo")) {
       return FileType.LZO;

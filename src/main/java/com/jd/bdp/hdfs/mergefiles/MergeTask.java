@@ -108,7 +108,7 @@ public class MergeTask implements Task {
       if (mergeRunner == null) {
         continue;
       }
-      if (mergeRunner.getException() != null) {
+      if (mergeRunner.getException() != null || mergeRunner.getResult() != 0) {
         console.printError(mergeRunner.getPREFIX() + " ERROR! " + ExceptionUtils.getFullStackTrace(mergeRunner.getException()));
         errorNumber++;
         mergeRunner.errorRecorder(mergeRunner.getInput() + "\t"
