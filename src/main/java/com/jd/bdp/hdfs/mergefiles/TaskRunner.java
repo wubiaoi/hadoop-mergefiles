@@ -18,7 +18,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.MD5Hash;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.JobPriority;
 import org.apache.hadoop.mapreduce.Counter;
@@ -43,6 +42,7 @@ public class TaskRunner extends Thread {
   private final String PREFIX;
 
   protected Job job;
+  private String jobId;
   private MergePath mergePath;
   private Path input;
   private Path output;
@@ -86,6 +86,14 @@ public class TaskRunner extends Thread {
     } else {
       targetPath = input;
     }
+  }
+
+  public String getJobId() {
+    return jobId;
+  }
+
+  public void setJobId(String jobId) {
+    this.jobId = jobId;
   }
 
   public String getPREFIX() {
@@ -196,23 +204,24 @@ public class TaskRunner extends Thread {
       console.printInfo("Start Merge(" + getTaskRunnerID() + "/" + context.getTotal() + "): " + input + " ,Type:" + inputType);
       conf.set("mapreduce.job.priority", JobPriority.VERY_HIGH.name());
       conf.set("mapred.job.priority", JobPriority.VERY_HIGH.name());
-
+      conf.setInt("mapreduce.job.max.split.locations", Integer.MAX_VALUE);
       Job job = Job.getInstance(conf, "MergeFiles:" + input);
       job.setJarByClass(TaskRunner.class);
+      job.getConfiguration().setBoolean("mapreduce.map.speculative", false); //关闭推测执行,防止写文件冲突
 
       //根据文件类型选择输入输出类型
       if (inputType.equals(FileType.TEXT)) {
         job.setInputFormatClass(CombineMergeTextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
-        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize() + 50 * 1024 * 1024);
+        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize());
       } else if (inputType.equals(FileType.LZO)) {
         job.setInputFormatClass(CompressedCombineFileInputFormat.class);
         conf.set("io.compression.codecs", "com.hadoop.compression.lzo.LzopCodec");
         FileOutputFormat.setCompressOutput(job, true);
         FileOutputFormat.setOutputCompressorClass(job, LzopCodec.class);
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
-        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize() + 50 * 1024 * 1024);
+        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize());
       } else if (inputType.equals(FileType.ORC)) {
         throw new UnsupportedTypeException(); //todo
       } else if (inputType.equals(FileType.AVRO)) {
@@ -234,15 +243,11 @@ public class TaskRunner extends Thread {
       FileInputFormat.setInputPaths(job, input);
       FileOutputFormat.setOutputPath(job, output);
       int res = job.waitForCompletion(true) ? 0 : 1;
+      setJobId(job.getJobID().toString());
       // 开始moveTask
       Counter mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
       Counter mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
       setJobstatus(job.getJobState());
-      try {
-        fs.delete(new Path(input, ".stage"));
-      } catch (IOException e) {
-        log.warn("delete tmp .stage failed.");
-      }
       if (res == 0 && jobstatus.equals(JobStatus.State.SUCCEEDED)) {
         console.printInfo(this.PREFIX + "Merge Job finished successfully");
         //创建索引
@@ -270,6 +275,7 @@ public class TaskRunner extends Thread {
         Path moveLog = new Path(mergePath.getLogDir(), "mv.log");
         console.printInfo(this.PREFIX + "Start move file:" + targetPath + " to " + mergePath.getTmpDir());
         FSDataOutputStream out = fs.create(moveLog);
+        out.writeBytes("JobId: " + jobId + "\n");
         out.writeBytes("move " + targetPath + " to " + mergePath.getTmpDir() + "\n");
         fs.rename(targetPath, mergePath.getTmpDir());
         console.printInfo(this.PREFIX + "move file:" + targetPath + " to " + mergePath.getTmpDir() + " success");
@@ -283,6 +289,12 @@ public class TaskRunner extends Thread {
     } catch (Exception e) {
       exception = e;
       return 200;
+    } finally {
+      try {
+        fs.delete(new Path(input, ".stage"));
+      } catch (IOException e) {
+        log.warn("delete tmp .stage failed.");
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 package com.jd.bdp.hdfs.mergefiles;
 
+import com.jd.bdp.utils.VersionInfo;
 import org.apache.commons.cli.*;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -255,7 +256,7 @@ public class Config {
             "\t-m\t设置合并每个reducer处理的大小，默认:250M\n" +
             "\t-n\t是否递归合并，默认:递归合并\n" +
             "\t-t\t是否把不识别的文件认为是文本类型，默认:否\n" +
-            "\t-o\t设置合并后输入的路径，默认:输入目录\n" +
+            "\t-o\t设置合并后输出的HDFS路径，默认:输入目录\n" +
             "\t-f\t指定一个本地文件作为输入合并目录\n" +
             "\t-j\t指定最大并行的job数\n" +
             "\t";
@@ -263,6 +264,7 @@ public class Config {
 
   public static String list() {
     StringBuilder msg = new StringBuilder();
+    msg.append("合并程序版本: " + VersionInfo.version);
     msg.append("输入参数:\n");
     msg.append("\t合并路径: " + Arrays.deepToString(path) + "\n");
     msg.append("\t小文件合并小于: " + mergeLessThanSize / 1024 / 1024 + " Mb\n");

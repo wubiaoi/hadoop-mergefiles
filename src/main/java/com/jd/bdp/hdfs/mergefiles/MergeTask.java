@@ -152,6 +152,11 @@ public class MergeTask implements Task {
         }
       }
     } else { //存在需要合并的文件
+      try {
+        fs.delete(new Path(path, ".stage"));
+      } catch (IOException e) {
+        log.warn("clear tmp .stage failed.");
+      }
       FileStatus[] files = fs.listStatus(path, new Filter.MergeFileFilter());
       ContentSummary contentSummary = fs.getContentSummary(path);
       long size = contentSummary.getLength();
