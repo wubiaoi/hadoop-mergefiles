@@ -294,6 +294,10 @@ public class TaskRunner extends Thread {
         fs.delete(new Path(input, ".stage"));
       } catch (IOException e) {
         log.warn("delete tmp .stage failed.");
+        try {
+          errorRecorder("delete tmp .stage Path [" + new Path(input, ".stage") + "] failed.");
+        } catch (IOException e1) {
+        }
       }
     }
   }
