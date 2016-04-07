@@ -1,4 +1,4 @@
-package com.jd.bdp.hdfs.mergefiles.mr;
+package com.jd.bdp.hdfs.mergefiles.mapreduce;
 
 import com.jd.bdp.hdfs.mergefiles.FileType;
 import org.apache.hadoop.fs.Path;

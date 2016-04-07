@@ -1,4 +1,4 @@
-package com.jd.bdp.hdfs.mergefiles.mr.lib;
+package com.jd.bdp.hdfs.mergefiles.mapreduce.lib;
 
 import com.jd.bdp.hdfs.mergefiles.Config;
 import com.jd.bdp.hdfs.mergefiles.FileType;
@@ -12,7 +12,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 
 /**
@@ -87,6 +86,9 @@ public class Filter {
    */
   public static FileType checkTypeUnique(FileStatus[] files, FileSystem fs)
           throws IOException, FileTypeNotUniqueException {
+    if (Config.getFileType() != null) {
+      return Config.getFileType();
+    }
     if (files.length < 2) {
       return Utils.getFileType(files[0].getPath(), fs);
     }

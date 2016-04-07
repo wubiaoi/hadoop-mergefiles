@@ -66,6 +66,16 @@ public class Config {
 
   private static boolean wantNoneTypeToText;
 
+  private static FileType fileType;
+
+  public static FileType getFileType() {
+    return fileType;
+  }
+
+  public static void setFileType(FileType fileType) {
+    Config.fileType = fileType;
+  }
+
   public static boolean isWantNoneTypeToText() {
     return wantNoneTypeToText;
   }
@@ -168,6 +178,7 @@ public class Config {
     options.addOption("f", "file", true, "以文件形式传入路径");
     options.addOption("j", "maxJobNum", true, "最大并发的job数");
     options.addOption("d", "tempDir", true, "临时目录");
+    options.addOption("u", "fileType", true, "指定文件格式(orc,lzo,text,avro等)");
     CommandLineParser parser = new PosixParser();
     CommandLine cmd = null;
 
@@ -218,6 +229,16 @@ public class Config {
     if (cmd.hasOption('d')) {
       Config.setTmpDir(new Path(cmd.getOptionValue('d')));
     }
+    if (cmd.hasOption('u')) {
+      FileType type = null;
+      try {
+        type = FileType.valueOf(cmd.getOptionValue('u').toUpperCase());
+      } catch (IllegalArgumentException e) {
+        throw e;
+      } catch (NullPointerException ne) {
+      }
+      Config.setFileType(type);
+    }
   }
 
   /**
@@ -249,6 +270,7 @@ public class Config {
    */
   public static String help() {
     return "功能: 合并HDFS一个目录下的小文件，默认小于128M将被合并\n" +
+            "版本:" + VersionInfo.version + "\n" +
             "Usage: hadoop jar MergeTask -p 准备合并的HDFS全路径\n" +
             "高级参数说明：\n" +
             "\t-p\t指定准备合并的HDFS全路径,多个以逗号分隔，必选\n" +
@@ -259,6 +281,8 @@ public class Config {
             "\t-o\t设置合并后输出的HDFS路径，默认:输入目录\n" +
             "\t-f\t指定一个本地文件作为输入合并目录\n" +
             "\t-j\t指定最大并行的job数\n" +
+            "\t-d\t指定合并临时目录\n" +
+            "\t-u\t指定文件格式(orc,lzo,text,avro等)\n" +
             "\t";
   }
 

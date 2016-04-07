@@ -1,4 +1,4 @@
-package com.jd.bdp.hdfs.mergefiles.mr.lib;
+package com.jd.bdp.hdfs.mergefiles.mapreduce.lib;
 
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.WritableComparable;

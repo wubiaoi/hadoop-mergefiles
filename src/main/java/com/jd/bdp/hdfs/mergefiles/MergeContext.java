@@ -1,6 +1,6 @@
 package com.jd.bdp.hdfs.mergefiles;
 
-import com.jd.bdp.hdfs.mergefiles.mr.MergePath;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.MergePath;
 
 import java.util.Iterator;
 import java.util.Queue;

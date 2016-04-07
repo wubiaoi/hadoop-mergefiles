@@ -1,8 +1,8 @@
 package com.jd.bdp.hdfs.mergefiles;
 
 import com.jd.bdp.hdfs.mergefiles.exception.FileTypeNotUniqueException;
-import com.jd.bdp.hdfs.mergefiles.mr.MergePath;
-import com.jd.bdp.hdfs.mergefiles.mr.lib.Filter;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.MergePath;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.lib.Filter;
 import com.jd.bdp.utils.LogHelper;
 import com.jd.bdp.utils.Utils;
 import org.apache.commons.lang.exception.ExceptionUtils;

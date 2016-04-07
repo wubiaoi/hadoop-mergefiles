@@ -3,10 +3,10 @@ package com.jd.bdp.hdfs.mergefiles;
 import com.hadoop.compression.lzo.DistributedLzoIndexer;
 import com.hadoop.compression.lzo.LzopCodec;
 import com.jd.bdp.hdfs.mergefiles.exception.UnsupportedTypeException;
-import com.jd.bdp.hdfs.mergefiles.mr.MergeFilesMapper;
-import com.jd.bdp.hdfs.mergefiles.mr.MergePath;
-import com.jd.bdp.hdfs.mergefiles.mr.lib.CombineMergeTextInputFormat;
-import com.jd.bdp.hdfs.mergefiles.mr.lib.CompressedCombineFileInputFormat;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.MergeFilesMapper;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.MergePath;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.OrcMergeFilesMapper;
+import com.jd.bdp.hdfs.mergefiles.mapreduce.lib.*;
 import com.jd.bdp.utils.LogHelper;
 import com.jd.bdp.utils.Utils;
 import org.apache.avro.mapreduce.AvroKeyInputFormat;
@@ -18,8 +18,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
+import org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.JobClient;
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.JobPriority;
+import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.JobStatus;
@@ -205,25 +211,34 @@ public class TaskRunner extends Thread {
       conf.set("mapreduce.job.priority", JobPriority.VERY_HIGH.name());
       conf.set("mapred.job.priority", JobPriority.VERY_HIGH.name());
       conf.setInt("mapreduce.job.max.split.locations", Integer.MAX_VALUE);
-      Job job = Job.getInstance(conf, "MergeFiles:" + input);
-      job.setJarByClass(TaskRunner.class);
-      job.getConfiguration().setBoolean("mapreduce.map.speculative", false); //关闭推测执行,防止写文件冲突
+      conf.setBoolean("mapreduce.map.speculative", false); //关闭推测执行,防止写文件冲突
+      conf.setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
+      conf.setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize());
+      conf.setLong("mapreduce.input.fileinputformat.split.minsize.per.rack", Config.getMergeMaxSize());
+
+
+      Job job = null;
+      JobConf jobconf = null;
+      if (isOldMR(inputType)) {
+        jobconf = new JobConf(conf, TaskRunner.class);
+        jobconf.setJobName("MergeFiles:" + input);
+      } else {
+        job = Job.getInstance(conf, "MergeFiles:" + input);
+        job.setJarByClass(TaskRunner.class);
+      }
 
       //根据文件类型选择输入输出类型
       if (inputType.equals(FileType.TEXT)) {
         job.setInputFormatClass(CombineMergeTextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
-        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
-        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize());
       } else if (inputType.equals(FileType.LZO)) {
         job.setInputFormatClass(CompressedCombineFileInputFormat.class);
         conf.set("io.compression.codecs", "com.hadoop.compression.lzo.LzopCodec");
         FileOutputFormat.setCompressOutput(job, true);
         FileOutputFormat.setOutputCompressorClass(job, LzopCodec.class);
-        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize.per.node", Config.getMergeMaxSize());
-        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", Config.getMergeMaxSize());
       } else if (inputType.equals(FileType.ORC)) {
-        throw new UnsupportedTypeException(); //todo
+        jobconf.setInputFormat(CombineMergeOrcInputFormat.class);
+        jobconf.setOutputFormat(NoOutputFormat.class);
       } else if (inputType.equals(FileType.AVRO)) {
         job.setInputFormatClass(AvroKeyInputFormat.class);
         job.setOutputFormatClass(AvroKeyValueOutputFormat.class);//todo
@@ -232,22 +247,45 @@ public class TaskRunner extends Thread {
         throw new UnsupportedTypeException("UnKnow file type.If you make sure it is a text format.add -t run this path[" + input + "] again.");
       }
 
-      job.setMapOutputKeyClass(Text.class);
-      job.setMapOutputValueClass(Text.class);
-      job.setOutputKeyClass(Text.class);
-      job.setOutputValueClass(Text.class);
+      int res = 0;
+      Counter mapInput;
+      Counter mapOutput;
+      if (isOldMR(inputType)) {
+        jobconf.setMapOutputValueClass(NullWritable.class);
+        jobconf.setOutputValueClass(NullWritable.class);
+        jobconf.setMapperClass(OrcMergeFilesMapper.class);
+        jobconf.setMapOutputKeyClass(NullWritable.class);
+        jobconf.setOutputKeyClass(NullWritable.class);
+        jobconf.setNumReduceTasks(0);
+        OrcFileStripeMergeInputFormat.setInputPaths(jobconf, input);
+        OrcOutputFormat.setOutputPath(jobconf, output);
 
-      job.setMapperClass(MergeFilesMapper.class);
-      job.setNumReduceTasks(0);
+        RunningJob rj = JobClient.runJob(jobconf);
+        setJobId(rj.getID().toString());
+        mapInput = rj.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
+        mapOutput = rj.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
+        setJobstatus(rj.getJobStatus().getState());
+      } else {
+        job.setMapOutputValueClass(Text.class);
+        job.setOutputValueClass(Text.class);
+        job.setMapperClass(MergeFilesMapper.class);
+        job.setMapOutputKeyClass(NullWritable.class);
+        job.setOutputKeyClass(NullWritable.class);
 
-      FileInputFormat.setInputPaths(job, input);
-      FileOutputFormat.setOutputPath(job, output);
-      int res = job.waitForCompletion(true) ? 0 : 1;
-      setJobId(job.getJobID().toString());
-      // 开始moveTask
-      Counter mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
-      Counter mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
-      setJobstatus(job.getJobState());
+        job.setNumReduceTasks(0);
+
+        FileInputFormat.setInputPaths(job, input);
+        FileOutputFormat.setOutputPath(job, output);
+
+        res = job.waitForCompletion(true) ? 0 : 1;
+        setJobId(job.getJobID().toString());
+        // 开始moveTask
+        mapInput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_INPUT_RECORDS");
+        mapOutput = job.getCounters().findCounter(("org.apache.hadoop.mapreduce.TaskCounter"), "MAP_OUTPUT_RECORDS");
+        setJobstatus(job.getJobState());
+      }
+
+
       if (res == 0 && jobstatus.equals(JobStatus.State.SUCCEEDED)) {
         console.printInfo(this.PREFIX + "Merge Job finished successfully");
         //创建索引
@@ -291,7 +329,8 @@ public class TaskRunner extends Thread {
       return 200;
     } finally {
       try {
-        fs.delete(new Path(input, ".stage"));
+        fs.delete(new Path(input, ".stage"),true);
+        fs.delete(new Path(getTargetPath(), "_SUCCESS"), true);
       } catch (IOException e) {
         log.warn("delete tmp .stage failed.");
         try {
@@ -316,6 +355,10 @@ public class TaskRunner extends Thread {
 
   public static long getTaskRunnerID() {
     return taskRunnerID.get();
+  }
+
+  public static boolean isOldMR(FileType type) {
+    return type.equals(FileType.ORC);
   }
 
 }
