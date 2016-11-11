@@ -1,16 +1,13 @@
-import com.jd.bdp.hdfs.mergefiles.Config;
-import com.jd.bdp.hdfs.mergefiles.FileType;
-
-import java.util.UUID;
+import com.jd.bdp.utils.Utils;
+import org.apache.hadoop.fs.Path;
 
 /**
  * Created by wubiao on 1/15/16.
  */
 public class Test {
   public static void main(String[] args) {
-    System.out.println(UUID.randomUUID());
-    long fd = 4321432L;
-    double a = 32432423 / 1024 / 1240;
-    System.out.println(String.format("%s%s", fd,a));
+    String a = "{\"id\": 123,\"name\": \"bill\"}";
+    System.out.println(new Path("/tmp/test" + Path.getPathWithoutSchemeAndAuthority(new Path("hdfs://0.0.0.0:9000/user/centos1/warehouse/tmp.db/lzo_test"))));
+
   }
 }

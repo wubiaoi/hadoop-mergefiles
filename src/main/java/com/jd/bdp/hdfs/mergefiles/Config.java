@@ -68,6 +68,10 @@ public class Config {
 
   private static FileType fileType;
 
+  private static String excludePath;
+
+  private static int splitNumThreads = 50;
+
   public static FileType getFileType() {
     return fileType;
   }
@@ -160,6 +164,22 @@ public class Config {
     Config.tmpDir = tmpDir;
   }
 
+  public static String getExcludePath() {
+    return excludePath;
+  }
+
+  public static void setExcludePath(String excludePath) {
+    Config.excludePath = excludePath;
+  }
+
+  public static int getSplitNumThreads() {
+    return splitNumThreads;
+  }
+
+  public static void setSplitNumThreads(int splitNumThreads) {
+    Config.splitNumThreads = splitNumThreads;
+  }
+
   /**
    * 处理命令行输入的参数
    *
@@ -179,6 +199,8 @@ public class Config {
     options.addOption("j", "maxJobNum", true, "最大并发的job数");
     options.addOption("d", "tempDir", true, "临时目录");
     options.addOption("u", "fileType", true, "指定文件格式(orc,lzo,text,avro等)");
+    options.addOption("x", "excludePath", true, "指定一个文件,内容为不需要合并的目录");
+    options.addOption("l", "splitNumThreads", true, "计算目录起用的最大线程数.");
     CommandLineParser parser = new PosixParser();
     CommandLine cmd = null;
 
@@ -239,6 +261,12 @@ public class Config {
       }
       Config.setFileType(type);
     }
+    if (cmd.hasOption('x')) {
+      Config.setExcludePath(cmd.getOptionValue('x')); // 排除一些不需要合并的目录
+    }
+    if (cmd.hasOption('l')) {
+      Config.setSplitNumThreads(Integer.parseInt(cmd.getOptionValue('l')));
+    }
   }
 
   /**
@@ -283,6 +311,8 @@ public class Config {
             "\t-j\t指定最大并行的job数\n" +
             "\t-d\t指定合并临时目录\n" +
             "\t-u\t指定文件格式(orc,lzo,text,avro等)\n" +
+            "\t-x\t指定一个文件,内容为不需要合并的目录\n" +
+            "\t-l\t计算目录起用的最大线程数.\n" +
             "\t";
   }
 
@@ -297,8 +327,10 @@ public class Config {
     msg.append("\t临时目录: " + tmpDir + "\n");
     msg.append("\t合并后文件的目录: " + (mergeTargePath == null ? Arrays.deepToString(path) : mergeTargePath) + "\n");
     msg.append("\t最大并发JOB数: " + maxJob + "\n");
-    msg.append("\t不认别文件类型处理: " + (wantNoneTypeToText ? "认为是Text" : "不处理") + "\n");
+    msg.append("\t不识别文件类型处理: " + (wantNoneTypeToText ? "认为是Text" : "不处理") + "\n");
     msg.append("\t文件读取输入路径文件路径: " + sourefile + "\n");
+    msg.append("\tExclude Path路径: " + excludePath + "\n");
+    msg.append("\t计算目录起用的最大线程数: " + splitNumThreads + "\n");
     return msg.toString();
   }
 }

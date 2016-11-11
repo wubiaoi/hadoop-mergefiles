@@ -1,5 +1,7 @@
 package com.jd.bdp.hdfs.mergefiles;
 
+import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.jd.bdp.hdfs.mergefiles.exception.FileTypeNotUniqueException;
 import com.jd.bdp.hdfs.mergefiles.mapreduce.MergePath;
 import com.jd.bdp.hdfs.mergefiles.mapreduce.lib.Filter;
@@ -10,8 +12,13 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
+import org.apache.hadoop.fs.FileSystem;
 
 import java.io.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.*;
 
 /**
  * 合并HDFS上的小文件
@@ -24,8 +31,8 @@ public class MergeTask implements Task {
 
   private FileSystem fs;
   private Configuration conf;
-  private Path tmpDir;
-  private Path logDir;
+  private ExecutorService threadPool;
+  private Set<String> excludePaths;
 
   public MergeTask() {
     console = new LogHelper(log, true);
@@ -42,6 +49,8 @@ public class MergeTask implements Task {
       String user = System.getProperty("user.name");
       String tmp = "/user/" + user + "/warehouse/tmp/sqltmp";
       Config.setTmpDir(new Path(tmp));
+    }
+    if (!fs.exists(Config.getTmpDir())) {
       fs.mkdirs(Config.getTmpDir());
     }
     console.printInfo(Config.list());
@@ -52,15 +61,27 @@ public class MergeTask implements Task {
     res.append("大小" + Config.FIELD_SEPARATOR);
     res.append("总文件数");
     res.append("\n");
+    threadPool = Executors.newFixedThreadPool(Config.getSplitNumThreads(), new ThreadFactoryBuilder().setDaemon(true).build());
+    excludePaths = new HashSet<String>();
     console.printInfo(res.toString());
   }
 
   @Override
-  public int run() throws IOException, InterruptedException {
+  public int run() throws IOException, InterruptedException, ExecutionException {
     Path[] path = Config.getPath();
     int errorNumber = 0;
     //打开流将待合并的目录保存到文件
     MergeContext context = new MergeContext();
+    //读取不需要合并的路径
+    if (Config.getExcludePath() != null) {
+      File file = new File(Config.getExcludePath());
+      InputStreamReader in = new InputStreamReader(new FileInputStream(file));
+      BufferedReader br = new BufferedReader(in);
+      String line;
+      while ((line = br.readLine()) != null) {
+        excludePaths.add(line);
+      }
+    }
     //发现需要合并的路径
     if (path == null) {
       File file = new File(Config.getSourefile());
@@ -73,7 +94,7 @@ public class MergeTask implements Task {
           conf.set(Config.INPUT_DIR, p.toString());
           recurseDir(p, context, fs);
         } else {
-          console.printError("请输入一个合法的路径");
+          console.printError(line + " 不合法!请输入一个合法的路径");
           System.exit(1);
         }
       }
@@ -88,6 +109,7 @@ public class MergeTask implements Task {
         }
       }
     }
+
     //合并小文件
     MergePath task;
     StringBuilder report = new StringBuilder();
@@ -142,13 +164,35 @@ public class MergeTask implements Task {
    * @param fs
    * @throws InterruptedException
    */
-  public void recurseDir(Path path, MergeContext context, FileSystem fs)
-          throws InterruptedException, IOException {
-    FileStatus[] dirs = fs.listStatus(path, new Filter.MergeDirFilter());
+  public void recurseDir(Path path, final MergeContext context, final FileSystem fs) {
+    if (isExcludePath(path, excludePaths)) return;
+    List<Future> futures = Lists.newArrayList();
+    FileStatus[] dirs = null;
+    try {
+      dirs = fs.listStatus(path, new Filter.MergeDirFilter());
+    } catch (IOException e) {
+      console.printError(ExceptionUtils.getFullStackTrace(e));
+      System.exit(-1);
+    }
     if (dirs.length > 0) { //当目录下存在子目录
       if (Config.isRecursive()) {
-        for (FileStatus dir : dirs) {
-          recurseDir(dir.getPath(), context, fs);
+        for (final FileStatus dir : dirs) {
+          if (isExcludePath(dir.getPath(), excludePaths)) continue;
+          futures.add(threadPool.submit(new Runnable() {
+            @Override
+            public void run() {
+              recurseDir(dir.getPath(), context, fs);
+            }
+          }));
+        }
+        try {
+          for (Future future : futures) {
+            future.get();
+          }
+        } catch (InterruptedException e) {
+          console.printError(ExceptionUtils.getFullStackTrace(e));
+        } catch (ExecutionException e1) {
+          console.printError(ExceptionUtils.getFullStackTrace(e1));
         }
       }
     } else { //存在需要合并的文件
@@ -157,13 +201,22 @@ public class MergeTask implements Task {
       } catch (IOException e) {
         log.warn("clear tmp .stage failed.");
       }
-      FileStatus[] files = fs.listStatus(path, new Filter.MergeFileFilter());
-      ContentSummary contentSummary = fs.getContentSummary(path);
+      FileStatus[] files = null;
+      ContentSummary contentSummary = null;
+      try {
+        files = fs.listStatus(path, new Filter.MergeFileFilter());
+        contentSummary = fs.getContentSummary(path);
+      } catch (IOException e) {
+        console.printError(ExceptionUtils.getFullStackTrace(e));
+        System.exit(-1);
+      }
       long size = contentSummary.getLength();
       long totalCount = contentSummary.getFileCount();
       long fileCount = files.length;
       if (fileCount > 1 && size / fileCount < Config.getMergeLessThanSize()) {
         //创建临时目录
+        Path tmpDir;
+        Path logDir;
         String tmpDirName = Utils.cutPrefix(
                 Path.getPathWithoutSchemeAndAuthority(path).toString()
                         .replaceAll("/", "_"), "_");
@@ -172,16 +225,23 @@ public class MergeTask implements Task {
         tmpDir = new Path(Config.getTmpDir(), curDir);
         logDir = new Path(Config.getTmpDir(),
                 new Path(new Path("logs", Utils.dt()), tmpDirName));
-        fs.mkdirs(logDir);
 
-        FileType type;
+        FileType type = null;
         try {
+          fs.mkdirs(logDir);
           type = Filter.checkTypeUnique(files, fs);
         } catch (FileTypeNotUniqueException e) {
-          FSDataOutputStream errout = fs.create(new Path(logDir, "error.log"));
-          errout.writeBytes("TypeNotUnique\t" + path);
-          errout.close();
+          try {
+            FSDataOutputStream errout = fs.create(new Path(logDir, "error.log"));
+            errout.writeBytes("TypeNotUnique\t" + path);
+            errout.close();
+          } catch (IOException e1) {
+            log.warn(ExceptionUtils.getFullStackTrace(e1));
+          }
           return;
+        } catch (IOException e) {
+          console.printError(ExceptionUtils.getFullStackTrace(e));
+          System.exit(-2);
         }
         MergePath mergePath = new MergePath(path, type, size, totalCount);
         mergePath.setTmpDir(tmpDir);
@@ -201,5 +261,22 @@ public class MergeTask implements Task {
 
   @Override
   public void close() throws IOException {
+  }
+
+  /**
+   * 检查路径是否在exclude path中
+   *
+   * @param path
+   * @param excludePaths
+   * @return
+   */
+  private static boolean isExcludePath(Path path, Set<String> excludePaths) {
+    if (excludePaths == null || excludePaths.isEmpty()) return false;
+    for (String excludePath : excludePaths) {
+      if (path.toString().startsWith(excludePath)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
