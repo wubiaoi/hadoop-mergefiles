@@ -2,10 +2,12 @@ package com.jd.bdp.utils;
 
 import com.jd.bdp.hdfs.mergefiles.Config;
 import com.jd.bdp.hdfs.mergefiles.FileType;
-import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.MD5Hash;
+import org.apache.hadoop.security.UserGroupInformation;
 
 import java.io.IOException;
 import java.util.Calendar;
@@ -16,11 +18,28 @@ import java.util.GregorianCalendar;
  */
 public class Utils {
 
+  public static String USER = System.getenv("HADOOP_USER_NAME");
+
+  static {
+    if (StringUtils.isEmpty(USER)) {
+      USER = System.getenv("USER");
+      if (StringUtils.isEmpty(USER)) {
+        USER = System.getProperty("user.name");
+        if (StringUtils.isEmpty(USER)) {
+          try {
+            USER = UserGroupInformation.getCurrentUser().getUserName();
+          } catch (IOException e) {
+            System.err.println(ExceptionUtils.getFullStackTrace(e));
+            System.exit(-1);
+          }
+        }
+      }
+    }
+  }
+
   public static String makeMergeId(String path) {
     GregorianCalendar gc = new GregorianCalendar();
-    String userid = System.getProperty("user.name");
-
-    return userid
+    return USER
             + "_"
             + String.format("%1$4d%2$02d%3$02d%4$02d%5$02d%6$02d", gc
             .get(Calendar.YEAR), gc.get(Calendar.MONTH) + 1, gc
@@ -47,7 +66,7 @@ public class Utils {
   }
 
   public static String cutPrefix(String string, String prefix) {
-    if(string.startsWith(prefix)) {
+    if (string.startsWith(prefix)) {
       string = string.substring(prefix.length());
     }
 
@@ -55,7 +74,7 @@ public class Utils {
   }
 
   public static String cutSuffix(String string, String suffix) {
-    if(string.endsWith(suffix)) {
+    if (string.endsWith(suffix)) {
       string = string.substring(0, string.length() - suffix.length());
     }
 
@@ -73,7 +92,7 @@ public class Utils {
       return FileType.AVRO;
     }
     // read file header
-   // FSDataInputStream in = fs.open(path);
+    // FSDataInputStream in = fs.open(path);
 
 
     if (Config.isWantNoneTypeToText()) {

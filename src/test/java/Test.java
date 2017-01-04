@@ -1,4 +1,3 @@
-import com.jd.bdp.utils.Utils;
 import org.apache.hadoop.fs.Path;
 
 /**

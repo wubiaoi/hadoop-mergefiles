@@ -1,5 +1,6 @@
 package com.jd.bdp.hdfs.mergefiles;
 
+import com.jd.bdp.utils.Utils;
 import com.jd.bdp.utils.VersionInfo;
 import org.apache.commons.cli.*;
 import org.apache.commons.lang.StringUtils;
@@ -331,6 +332,7 @@ public class Config {
     msg.append("\t文件读取输入路径文件路径: " + sourefile + "\n");
     msg.append("\tExclude Path路径: " + excludePath + "\n");
     msg.append("\t计算目录起用的最大线程数: " + splitNumThreads + "\n");
+    msg.append("\t当前用户: " + Utils.USER + "\n");
     return msg.toString();
   }
 }

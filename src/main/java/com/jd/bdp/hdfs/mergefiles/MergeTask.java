@@ -46,7 +46,7 @@ public class MergeTask implements Task {
     this.fs = FileSystem.get(conf);
     //创建临时目录
     if (Config.getTmpDir() == null) {
-      String user = System.getProperty("user.name");
+      String user = Utils.USER;
       String tmp = "/user/" + user + "/warehouse/tmp/sqltmp";
       Config.setTmpDir(new Path(tmp));
     }
