@@ -33,6 +33,7 @@ public class MergeTask implements Task {
   private Configuration conf;
   private ExecutorService threadPool;
   private Set<String> excludePaths;
+  private ConcurrentLinkedQueue<Future> futures = new ConcurrentLinkedQueue<Future>();
 
   public MergeTask() {
     console = new LogHelper(log, true);
@@ -110,6 +111,11 @@ public class MergeTask implements Task {
       }
     }
 
+    // wait all threads finish
+    for (Future future : futures) {
+      future.get();
+    }
+
     //合并小文件
     MergePath task;
     StringBuilder report = new StringBuilder();
@@ -166,7 +172,6 @@ public class MergeTask implements Task {
    */
   public void recurseDir(Path path, final MergeContext context, final FileSystem fs) {
     if (isExcludePath(path, excludePaths)) return;
-    List<Future> futures = Lists.newArrayList();
     FileStatus[] dirs = null;
     try {
       dirs = fs.listStatus(path, new Filter.MergeDirFilter());
@@ -185,21 +190,15 @@ public class MergeTask implements Task {
             }
           }));
         }
-        try {
-          for (Future future : futures) {
-            future.get();
-          }
-        } catch (InterruptedException e) {
-          console.printError(ExceptionUtils.getFullStackTrace(e));
-        } catch (ExecutionException e1) {
-          console.printError(ExceptionUtils.getFullStackTrace(e1));
-        }
       }
     } else { //存在需要合并的文件
+      Path stage = new Path(path, ".stage");
       try {
-        fs.delete(new Path(path, ".stage"));
+        if (fs.exists(stage)) {
+          fs.delete(stage);
+        }
       } catch (IOException e) {
-        log.warn("clear tmp .stage failed.");
+        log.warn("clear tmp .stage failed." + stage.toString());
       }
       FileStatus[] files = null;
       ContentSummary contentSummary = null;
@@ -228,7 +227,9 @@ public class MergeTask implements Task {
 
         FileType type = null;
         try {
-          fs.mkdirs(logDir);
+          if (!fs.exists(logDir)) {
+            fs.mkdirs(logDir);
+          }
           type = Filter.checkTypeUnique(files, fs);
         } catch (FileTypeNotUniqueException e) {
           try {
